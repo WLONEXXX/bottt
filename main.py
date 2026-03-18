@@ -1,11 +1,13 @@
 import logging
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types, executor
 
-# ================== "
-TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
-OPERATOR_ID = 7892937398
+# ================== НАСТРОЙКИ ==================
 
-# ================== ДАННЫЕ 
+TOKEN = "ВАШ_ТОКЕН_ЗДЕСЬ"
+OPERATOR_ID = 7892937398  # ID оператора
+
+# ================== ДАННЫЕ ==================
+
 products = {
     "food": {
         "title": "Вкусняшки",
@@ -19,12 +21,13 @@ products = {
 }
 
 
+pending_messages = {}  # operator_id -> user_id
+
 # ================== КЛАВИАТУРЫ ==================
 
 def main_menu():
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("Каталог", callback_data="catalog"))
-    kb.add(types.InlineKeyboardButton("Связаться с оператором", callback_data="contact_operator"))
     kb.add(types.InlineKeyboardButton("Оставить отзыв", callback_data="review"))
     return kb
 
@@ -32,7 +35,7 @@ def categories_kb():
     kb = types.InlineKeyboardMarkup()
     for key, cat in products.items():
         kb.add(types.InlineKeyboardButton(cat["title"], callback_data=f"cat_{key}"))
-    kb.add(types.InlineKeyboardButton("⬅ Назад", callback_data="main_menu"))
+    kb.add(types.InlineKeyboardButton("⬅ Назад", callback_data="start"))
     return kb
 
 def products_kb(cat_key):
@@ -47,24 +50,22 @@ def buy_kb(item_id):
     kb.add(types.InlineKeyboardButton("🛒 Заказать", callback_data=f"buy_{item_id}"))
     return kb
 
-# ================== БОТ ==================
+# ================== ЛОГИ ==================
 
 logging.basicConfig(level=logging.INFO)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-pending_orders = {}  # message_id -> user_id
-pending_messages = {}  # operator reply -> user_id
-
-# ================== ХЕНДЛЕРЫ ==================
+# ================== ХЭНДЛЕРЫ ==================
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    await message.answer("Добро пожаловать в магазин еды!", reply_markup=main_menu())
+    await message.answer("Добро пожаловать в Whitch shop!", reply_markup=main_menu())
 
-@dp.callback_query_handler(lambda c: c.data == "main_menu")
-async def back_main(callback: types.CallbackQuery):
-    await callback.message.edit_text("Главное меню:", reply_markup=main_menu())
+@dp.callback_query_handler(lambda c: c.data == "start")
+async def go_start(callback: types.CallbackQuery):
+    await callback.message.edit_text("Добро пожаловать в магазин еды!", reply_markup=main_menu())
 
 @dp.callback_query_handler(lambda c: c.data == "catalog")
 async def open_catalog(callback: types.CallbackQuery):
@@ -81,6 +82,7 @@ async def open_category(callback: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data.startswith("item_"))
 async def open_item(callback: types.CallbackQuery):
     item_id = int(callback.data.split("_")[1])
+
     item = None
     for cat in products.values():
         for it in cat["items"]:
@@ -89,12 +91,13 @@ async def open_item(callback: types.CallbackQuery):
                 break
 
     caption = f"{item['name']}\nЦена: {item['price']} ₽\n\n{item['desc']}"
-    # Если нет фото, просто отправляем текст
+
     await callback.message.answer(caption, reply_markup=buy_kb(item_id))
 
 @dp.callback_query_handler(lambda c: c.data.startswith("buy_"))
 async def buy(callback: types.CallbackQuery):
     item_id = int(callback.data.split("_")[1])
+
     item = None
     for cat in products.values():
         for it in cat["items"]:
@@ -104,70 +107,52 @@ async def buy(callback: types.CallbackQuery):
 
     user = callback.from_user
     text = (
-        f"🆕 Новый заказ!\n\n"
+        "🆕 Новый заказ!\n\n"
         f"Товар: {item['name']}\n"
         f"Цена: {item['price']} ₽\n\n"
         f"Пользователь: {user.full_name}\n"
         f"Username: @{user.username}\n"
         f"User ID: {user.id}\n\n"
-        "Нажмите 'Ответить пользователю', чтобы написать клиенту."
+        "Нажмите кнопку ниже, чтобы ответить пользователю."
     )
 
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("Ответить пользователю", callback_data=f"reply_{user.id}"))
+    # Кнопка для ответа оператору
+    kb_reply = types.InlineKeyboardMarkup()
+    kb_reply.add(types.InlineKeyboardButton("Ответить пользователю", callback_data=f"reply_{user.id}"))
 
-    msg = await bot.send_message(OPERATOR_ID, text, reply_markup=kb)
-    pending_orders[msg.message_id] = user.id
-
+    await bot.send_message(OPERATOR_ID, text, reply_markup=kb_reply)
     await callback.message.answer("Ваш заказ отправлен оператору!")
     await callback.answer()
 
-# ================== Связь с оператором и отзыв ==================
-
-@dp.callback_query_handler(lambda c: c.data == "contact_operator")
-async def contact_operator(callback: types.CallbackQuery):
-    await callback.message.answer("Введите сообщение для оператора:")
-    dp.register_message_handler(operator_message, lambda m: m.from_user.id == callback.from_user.id, state=None)
-
-async def operator_message(message: types.Message):
-    text = (
-        f"📩 Сообщение от пользователя {message.from_user.full_name} (@{message.from_user.username}, id:{message.from_user.id}):\n\n"
-        f"{message.text}"
-    )
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("Ответить пользователю", callback_data=f"reply_{message.from_user.id}"))
-    await bot.send_message(OPERATOR_ID, text, reply_markup=kb)
-    await message.answer("Ваше сообщение отправлено оператору!")
-
-@dp.callback_query_handler(lambda c: c.data == "review")
-async def leave_review(callback: types.CallbackQuery):
-    await callback.message.answer("Напишите свой отзыв о магазине:")
-    dp.register_message_handler(review_message, lambda m: m.from_user.id == callback.from_user.id, state=None)
-
-async def review_message(message: types.Message):
-    text = f"📝 Новый отзыв от {message.from_user.full_name} (@{message.from_user.username}):\n\n{message.text}"
-    await bot.send_message(OPERATOR_ID, text)
-    await message.answer("Спасибо за ваш отзыв!")
-
-# ================== Ответ оператора ==================
+# ================== СВЯЗЬ С ОПЕРАТОРОМ ==================
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reply_"))
 async def operator_reply(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[1])
+    pending_messages[callback.from_user.id] = user_id
     await callback.message.answer(f"Введите сообщение для пользователя {user_id}:")
-    dp.register_message_handler(send_to_user, lambda m: m.from_user.id == callback.from_user.id and m.chat.id == OPERATOR_ID, state=None)
 
+@dp.message_handler(lambda m: m.from_user.id in pending_messages)
 async def send_to_user(message: types.Message):
-    parts = message.text.split("\n", 1)
-    await bot.send_message(message.chat.id, "Ответ отправлен!")
-    # Находим user_id из последней нажатой кнопки
-    user_id = None
-    for key, val in pending_orders.items():
-        if val == message.chat.id:
-            user_id = val
-            break
+    operator_id = message.from_user.id
+    user_id = pending_messages.get(operator_id)
     if user_id:
         await bot.send_message(user_id, f"Оператор: {message.text}")
+        await message.answer("✅ Ответ отправлен пользователю!")
+        del pending_messages[operator_id]
+
+# ================== ОТЗЫВЫ ==================
+
+@dp.callback_query_handler(lambda c: c.data == "review")
+async def review_start(callback: types.CallbackQuery):
+    pending_messages[callback.from_user.id] = "review"
+    await callback.message.answer("Напишите ваш отзыв:")
+
+@dp.message_handler(lambda m: pending_messages.get(m.from_user.id) == "review")
+async def send_review(message: types.Message):
+    await bot.send_message(OPERATOR_ID, f"📝 Отзыв от {message.from_user.full_name}:\n{message.text}")
+    await message.answer("Спасибо за ваш отзыв!")
+    del pending_messages[message.from_user.id]
 
 # ================== ЗАПУСК ==================
 
