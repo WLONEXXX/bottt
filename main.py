@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ================== НАСТРОЙКИ ==================
 
 TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"  # Замените на ваш токен
-OPERATOR_ID = 7892937398 # Замените на ваш ID в Telegram
+OPERATOR_ID = 7892937398  # Ваш ID из скриншота
 
 # ================== ДАННЫЕ ==================
 
@@ -23,12 +23,10 @@ products = {
     }
 }
 
-# Хранилище состояний: user_id -> mode
-user_states = {}
-
-# Хранилище для связи сообщений оператора с пользователями
-operator_messages = {}  # message_id оператора -> user_id
-user_messages = {}  # message_id пользователя -> user_id
+# Хранилище состояний
+user_states = {}  # user_id -> mode
+pending_replies = {}  # message_id пользователя -> user_id
+order_messages = {}  # message_id заказа -> user_id
 
 # ================== КЛАВИАТУРЫ ==================
 
@@ -108,7 +106,6 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "main")
 async def back_main(callback: types.CallbackQuery):
-    # Очищаем состояние пользователя при возврате в главное меню
     if callback.from_user.id in user_states:
         del user_states[callback.from_user.id]
     
@@ -188,12 +185,11 @@ async def buy_item(callback: types.CallbackQuery):
             f"📝 Описание: {item['desc']}\n\n"
             f"👤 Покупатель: {user.full_name}\n"
             f"🆔 ID: {user.id}\n"
-            f"📱 Username: @{user.username if user.username else 'нет'}\n\n"
-            f"💬 <i>Ответьте на это сообщение, чтобы написать покупателю</i>"
+            f"📱 Username: @{user.username if user.username else 'нет'}"
         )
         
         msg = await bot.send_message(OPERATOR_ID, order_text, parse_mode='HTML')
-        operator_messages[msg.message_id] = user.id
+        order_messages[msg.message_id] = user.id
         
         await callback.message.edit_text(
             f"✅ <b>Заказ отправлен!</b>\n\n"
@@ -208,7 +204,6 @@ async def buy_item(callback: types.CallbackQuery):
 
 @dp.callback_query_handler(lambda c: c.data == "contact")
 async def contact_operator(callback: types.CallbackQuery):
-    # Устанавливаем состояние для пользователя
     user_states[callback.from_user.id] = 'waiting_for_message'
     
     await callback.message.edit_text(
@@ -223,7 +218,6 @@ async def contact_operator(callback: types.CallbackQuery):
 
 @dp.callback_query_handler(lambda c: c.data == "review")
 async def leave_review(callback: types.CallbackQuery):
-    # Устанавливаем состояние для пользователя
     user_states[callback.from_user.id] = 'waiting_for_review'
     
     await callback.message.edit_text(
@@ -258,8 +252,7 @@ async def set_currency(callback: types.CallbackQuery):
     await callback.message.edit_text(
         f"✅ <b>Валюта успешно изменена!</b>\n\n"
         f"Теперь цены будут отображаться в: {currency_names.get(currency, currency)}\n\n"
-        f"<i>Примечание: в текущей версии все цены отображаются в рублях.\n"
-        f"Конвертация валют будет добавлена в следующем обновлении.</i>",
+        f"<i>Примечание: в текущей версии все цены отображаются в рублях.</i>",
         reply_markup=back_to_main_kb(),
         parse_mode='HTML'
     )
@@ -289,17 +282,16 @@ async def handle_user_messages(message: types.Message):
                 f"📱 Username: @{message.from_user.username if message.from_user.username else 'нет'}"
             )
             
-            await bot.send_message(
+            sent_msg = await bot.send_message(
                 OPERATOR_ID, 
                 f"💬 <b>НОВОЕ СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ</b>\n\n"
                 f"{user_info}\n\n"
-                f"📝 <b>Текст сообщения:</b>\n{message.text}\n\n"
-                f"<i>Ответьте на это сообщение, чтобы написать пользователю</i>",
+                f"📝 <b>Текст сообщения:</b>\n{message.text}",
                 parse_mode='HTML'
             )
             
-            # Сохраняем сообщение пользователя для возможности ответа
-            user_messages[message.message_id] = user_id
+            # Сохраняем связь между отправленным сообщением и пользователем
+            pending_replies[sent_msg.message_id] = user_id
             
             await message.reply(
                 "✅ <b>Ваше сообщение отправлено оператору!</b>\n"
@@ -308,12 +300,10 @@ async def handle_user_messages(message: types.Message):
                 parse_mode='HTML'
             )
             
-            # Очищаем состояние после отправки
             del user_states[user_id]
-            logging.info(f"Состояние пользователя {user_id} очищено после отправки сообщения")
+            logging.info(f"Состояние пользователя {user_id} очищено")
             
         elif state == 'waiting_for_review':
-            # Отправляем отзыв оператору
             user_info = (
                 f"👤 От: {message.from_user.full_name}\n"
                 f"🆔 ID: {user_id}"
@@ -334,11 +324,8 @@ async def handle_user_messages(message: types.Message):
                 parse_mode='HTML'
             )
             
-            # Очищаем состояние после отправки
             del user_states[user_id]
-            logging.info(f"Состояние пользователя {user_id} очищено после отправки отзыва")
     else:
-        # Если пользователь просто пишет без выбора опции
         await message.reply(
             "❓ <b>Я вас не понимаю</b>\n\n"
             "Пожалуйста, используйте кнопки меню для навигации.",
@@ -346,9 +333,10 @@ async def handle_user_messages(message: types.Message):
             parse_mode='HTML'
         )
 
+# ИСПРАВЛЕННЫЙ ХЕНДЛЕР ДЛЯ ОТВЕТОВ ОПЕРАТОРА
 @dp.message_handler(lambda m: m.chat.id == OPERATOR_ID)
 async def operator_reply(message: types.Message):
-    """Обработка ответов оператора на сообщения пользователей"""
+    """Обработка ответов оператора"""
     
     logging.info(f"Получено сообщение от оператора: {message.text}")
     
@@ -356,36 +344,41 @@ async def operator_reply(message: types.Message):
     if message.reply_to_message:
         original_msg_id = message.reply_to_message.message_id
         
-        # Проверяем оба хранилища
-        if original_msg_id in operator_messages:
-            user_id = operator_messages[original_msg_id]
-            await bot.send_message(
-                user_id,
-                f"📞 <b>Ответ оператора:</b>\n\n{message.text}",
-                parse_mode='HTML'
-            )
-            await message.reply("✅ Ответ отправлен пользователю!")
-            logging.info(f"Ответ отправлен пользователю {user_id} через operator_messages")
-            
-        elif original_msg_id in user_messages:
-            user_id = user_messages[original_msg_id]
-            await bot.send_message(
-                user_id,
-                f"📞 <b>Ответ оператора:</b>\n\n{message.text}",
-                parse_mode='HTML'
-            )
-            await message.reply("✅ Ответ отправлен пользователю!")
-            logging.info(f"Ответ отправлен пользователю {user_id} через user_messages")
+        logging.info(f"Это ответ на сообщение ID: {original_msg_id}")
+        
+        # Ищем пользователя в обоих хранилищах
+        user_id = None
+        
+        if original_msg_id in pending_replies:
+            user_id = pending_replies[original_msg_id]
+            logging.info(f"Найден пользователь {user_id} в pending_replies")
+        elif original_msg_id in order_messages:
+            user_id = order_messages[original_msg_id]
+            logging.info(f"Найден пользователь {user_id} в order_messages")
+        
+        if user_id:
+            try:
+                await bot.send_message(
+                    user_id,
+                    f"📞 <b>Ответ оператора:</b>\n\n{message.text}",
+                    parse_mode='HTML'
+                )
+                await message.reply("✅ Ответ успешно отправлен пользователю!")
+                logging.info(f"Ответ отправлен пользователю {user_id}")
+            except Exception as e:
+                await message.reply(f"❌ Ошибка при отправке: {e}")
+                logging.error(f"Ошибка отправки пользователю {user_id}: {e}")
         else:
             await message.reply(
-                "❌ Не могу определить, кому отправить ответ.\n"
+                "❌ Не могу найти пользователя для этого сообщения.\n"
                 f"ID сообщения: {original_msg_id}"
             )
-            logging.warning(f"Не найден пользователь для message_id {original_msg_id}")
+            logging.warning(f"Пользователь не найден для message_id {original_msg_id}")
     else:
+        # Если это не ответ, показываем подсказку
         await message.reply(
             "ℹ️ <b>Чтобы ответить пользователю:</b>\n\n"
-            "1. Найдите сообщение от пользователя в этом чате\n"
+            "1. Найдите сообщение от пользователя выше\n"
             "2. Нажмите на него и выберите 'Ответить' (Reply)\n"
             "3. Напишите ваш ответ и отправьте",
             parse_mode='HTML'
@@ -398,10 +391,11 @@ if __name__ == "__main__":
     print("Бот запущен и готов к работе!")
     print(f"ID оператора: {OPERATOR_ID}")
     print("=" * 50)
-    print("\nПроверьте:")
-    print("1. Правильно ли указан токен бота")
-    print("2. Правильно ли указан ваш ID оператора")
-    print("3. Что бот добавлен в чат с вами")
+    print("\nИНСТРУКЦИЯ ДЛЯ ОПЕРАТОРА:")
+    print("1. Когда приходит сообщение от пользователя - вы его видите")
+    print("2. Чтобы ответить - нажмите на это сообщение и выберите 'Ответить'")
+    print("3. Напишите текст ответа и отправьте")
+    print("4. Пользователь получит ваш ответ")
     print("=" * 50)
     
     executor.start_polling(dp, skip_updates=True)
