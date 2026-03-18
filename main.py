@@ -4,7 +4,7 @@ from aiogram.utils import executor
 
 # ================== НАСТРОЙКИ ==================
 
-TOKEN = "ВАШ_ТОКЕН"
+TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
 OPERATOR_ID = 7892937398  # замените на свой ID
 
 # ================== ДАННЫЕ ==================
