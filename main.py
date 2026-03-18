@@ -23,6 +23,7 @@ products = {
     }
 }
 
+
 # Хранилище сообщений: message_id -> user_id
 user_messages = {}
 
@@ -35,8 +36,7 @@ def main_menu():
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("🛍 Каталог", callback_data="catalog"),
-        InlineKeyboardButton("💬 Связаться с оператором", callback_data="contact"),
-        InlineKeyboardButton("💰 Выбрать валюту", callback_data="currency")
+        InlineKeyboardButton("💬 Связаться с оператором", callback_data="contact")
     )
     return kb
 
@@ -67,16 +67,6 @@ def item_kb(item_id):
     )
     return kb
 
-def currency_kb():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("🇷🇺 Рубли", callback_data="currency_rub"),
-        InlineKeyboardButton("🇺🇸 Доллары", callback_data="currency_usd"),
-        InlineKeyboardButton("🇪🇺 Евро", callback_data="currency_eur"),
-        InlineKeyboardButton("🏠 Главное меню", callback_data="main")
-    )
-    return kb
-
 def back_kb():
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main"))
@@ -93,10 +83,9 @@ dp = Dispatcher(bot)
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     await message.answer(
-        "🌟 Добро пожаловать в Witch shop!\n\n"
+        "🌟 Добро пожаловать в магазин!\n\n"
         "🛍 Смотрите каталог\n"
-        "💬 Общайтесь с оператором\n"
-        "💰 Выбирайте валюту",
+        "💬 Связь с оператором",
         reply_markup=main_menu()
     )
 
@@ -181,47 +170,14 @@ async def buy_handler(callback: types.CallbackQuery):
             f"📱 @{user.username if user.username else 'нет'}"
         )
         
-        # Отправляем заказ оператору
         sent_msg = await bot.send_message(OPERATOR_ID, order_text, parse_mode='HTML')
-        
-        # Сохраняем связь для ответа
         user_messages[sent_msg.message_id] = user.id
         
         await callback.message.edit_text(
-            f"✅ <b>Заказ отправлен!</b>\n\n"
-            f"Товар: {item['name']}\n"
-            f"Цена: {item['price']} ₽\n\n"
-            f"Оператор скоро свяжется с вами.",
+            f"✅ <b>Заказ отправлен!</b>",
             reply_markup=back_kb(),
             parse_mode='HTML'
         )
-    await callback.answer()
-
-# ================== ХЕНДЛЕРЫ ВАЛЮТЫ ==================
-
-@dp.callback_query_handler(lambda c: c.data == "currency")
-async def currency_menu(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "💰 Выберите валюту:",
-        reply_markup=currency_kb()
-    )
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("currency_"))
-async def set_currency(callback: types.CallbackQuery):
-    currency = callback.data.split("_")[1]
-    currency_names = {
-        'rub': '🇷🇺 Рубли',
-        'usd': '🇺🇸 Доллары',
-        'eur': '🇪🇺 Евро'
-    }
-    
-    await callback.message.edit_text(
-        f"✅ Валюта изменена на {currency_names.get(currency, currency)}\n\n"
-        f"<i>Цены пока отображаются в рублях</i>",
-        reply_markup=back_kb(),
-        parse_mode='HTML'
-    )
     await callback.answer()
 
 # ================== ХЕНДЛЕРЫ СВЯЗИ ==================
@@ -231,16 +187,16 @@ async def contact_handler(callback: types.CallbackQuery):
     user_states[callback.from_user.id] = "waiting_message"
     
     await callback.message.edit_text(
-        "💬 Напишите ваше сообщение оператору.\n"
-        "Я отвечу вам как можно скорее!",
+        "💬 Напишите сообщение оператору\n"
+        "Можно отправлять текст и фото",
         reply_markup=back_kb()
     )
     await callback.answer()
 
-# ================== ОБРАБОТКА СООБЩЕНИЙ ==================
+# ================== ОБРАБОТКА ВСЕХ ТИПОВ СООБЩЕНИЙ ==================
 
-@dp.message_handler()
-async def handle_text(message: types.Message):
+@dp.message_handler(content_types=['text', 'photo', 'video', 'document', 'voice', 'sticker'])
+async def handle_all_messages(message: types.Message):
     user_id = message.from_user.id
     
     # Если это оператор
@@ -252,53 +208,92 @@ async def handle_text(message: types.Message):
                 target_user_id = user_messages[original_msg_id]
                 
                 try:
-                    await bot.send_message(
-                        target_user_id,
-                        f"📞 <b>Ответ оператора:</b>\n\n{message.text}",
-                        parse_mode='HTML'
-                    )
-                    await message.reply("✅ Ответ отправлен!")
+                    # Пересылаем сообщение пользователю в зависимости от типа
+                    if message.photo:
+                        photo = message.photo[-1]
+                        caption = message.caption or "📸 Фото от оператора"
+                        await bot.send_photo(target_user_id, photo.file_id, caption=caption)
+                    
+                    elif message.video:
+                        await bot.send_video(target_user_id, message.video.file_id, caption=message.caption)
+                    
+                    elif message.document:
+                        await bot.send_document(target_user_id, message.document.file_id, caption=message.caption)
+                    
+                    elif message.voice:
+                        await bot.send_voice(target_user_id, message.voice.file_id)
+                    
+                    elif message.sticker:
+                        await bot.send_sticker(target_user_id, message.sticker.file_id)
+                    
+                    else:  # Текстовое сообщение
+                        await bot.send_message(target_user_id, f"📞 {message.text}")
+                    
+                    await message.reply("✅ Отправлено!")
                 except Exception as e:
                     await message.reply(f"❌ Ошибка: {e}")
             else:
                 await message.reply("❌ Не могу найти пользователя")
         else:
-            await message.reply(
-                "ℹ️ Нажмите 'Ответить' на сообщение пользователя"
-            )
+            await message.reply("ℹ️ Нажмите 'Ответить' на сообщение пользователя")
     
     # Если это пользователь
     else:
         if user_id in user_states and user_states[user_id] == "waiting_message":
             try:
-                operator_text = (
-                    f"💬 <b>Сообщение от пользователя</b>\n\n"
+                # Информация о пользователе
+                user_info = (
                     f"👤 {message.from_user.full_name}\n"
                     f"🆔 {user_id}\n"
-                    f"📱 @{message.from_user.username if message.from_user.username else 'нет'}\n\n"
-                    f"📝 {message.text}"
+                    f"📱 @{message.from_user.username if message.from_user.username else 'нет'}"
                 )
                 
-                sent_msg = await bot.send_message(
-                    OPERATOR_ID,
-                    operator_text,
-                    parse_mode='HTML'
-                )
+                # Отправляем оператору в зависимости от типа
+                if message.photo:
+                    photo = message.photo[-1]
+                    caption = f"📸 Фото от пользователя\n\n{user_info}"
+                    if message.caption:
+                        caption += f"\n\n📝 {message.caption}"
+                    sent_msg = await bot.send_photo(OPERATOR_ID, photo.file_id, caption=caption)
                 
-                user_messages[sent_msg.message_id] = user_id
+                elif message.video:
+                    caption = f"🎥 Видео от пользователя\n\n{user_info}"
+                    if message.caption:
+                        caption += f"\n\n📝 {message.caption}"
+                    sent_msg = await bot.send_video(OPERATOR_ID, message.video.file_id, caption=caption)
                 
-                await message.reply(
-                    "✅ Сообщение отправлено!",
-                    reply_markup=back_kb()
-                )
+                elif message.document:
+                    caption = f"📎 Файл от пользователя\n\n{user_info}"
+                    if message.caption:
+                        caption += f"\n\n📝 {message.caption}"
+                    sent_msg = await bot.send_document(OPERATOR_ID, message.document.file_id, caption=caption)
                 
-                del user_states[user_id]
+                elif message.voice:
+                    caption = f"🎤 Голосовое от пользователя\n\n{user_info}"
+                    sent_msg = await bot.send_voice(OPERATOR_ID, message.voice.file_id, caption=caption)
+                
+                elif message.sticker:
+                    sent_msg = await bot.send_message(OPERATOR_ID, f"😊 Стикер от пользователя\n\n{user_info}")
+                    await bot.send_sticker(OPERATOR_ID, message.sticker.file_id)
+                
+                else:  # Текстовое сообщение
+                    text = f"💬 Сообщение от пользователя\n\n{user_info}\n\n📝 {message.text}"
+                    sent_msg = await bot.send_message(OPERATOR_ID, text)
+                
+                # Сохраняем связь для ответа
+                if 'sent_msg' in locals():
+                    user_messages[sent_msg.message_id] = user_id
+                
+                await message.reply("✅ Отправлено оператору!")
+                
+                # Не очищаем состояние, чтобы можно было отправлять несколько сообщений
+                # user_states остается "waiting_message"
                 
             except Exception as e:
                 await message.reply(f"❌ Ошибка: {e}")
         else:
             await message.reply(
-                "❓ Используйте кнопки меню",
+                "❓ Нажмите 'Связаться с оператором'",
                 reply_markup=main_menu()
             )
 
@@ -309,11 +304,13 @@ if __name__ == "__main__":
     print("🌟 Бот запущен!")
     print(f"👤 Оператор: {OPERATOR_ID}")
     print("=" * 50)
-    print("\n📝 Функции:")
-    print("✅ Каталог товаров")
-    print("✅ Связь с оператором")
-    print("✅ Выбор валюты")
-    print("✅ Заказы")
+    print("\n📱 Поддерживаются:")
+    print("✅ Текст")
+    print("✅ Фото")
+    print("✅ Видео")
+    print("✅ Документы")
+    print("✅ Голосовые")
+    print("✅ Стикеры")
     print("=" * 50)
     
     executor.start_polling(dp, skip_updates=True)
