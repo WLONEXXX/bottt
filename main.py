@@ -4,7 +4,7 @@ from aiogram.utils import executor  # для Aiogram 2.x
 
 # ================== НАСТРОЙКИ ==================
 
-TOKEN = "8250737324:AAFAGLchB2XdNN3VUHFMfifltRpTVLeIr1I"
+TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
 OPERATOR_ID = 7892937398
 
 # ================== ДАННЫЕ ==================
