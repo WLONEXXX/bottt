@@ -93,7 +93,7 @@ dp = Dispatcher(bot)
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     await message.answer(
-        "🌟 Добро пожаловать в Whitch shop!\n\n"
+        "🌟 Добро пожаловать в Witch shop!\n\n"
         "🛍 Смотрите каталог\n"
         "💬 Общайтесь с оператором\n"
         "💰 Выбирайте валюту",
