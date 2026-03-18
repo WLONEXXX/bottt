@@ -2,9 +2,8 @@ import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-# ================== НАСТРОЙКИ ==================
-
-TOKEN = "8250737324:AAFAGLchB2XdNN3VUHFMfifltRpTVLeIr1I"
+# ================== НАСТРОЙКИ "
+TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
 OPERATOR_ID = 7892937398
 
 # ================== ДАННЫЕ ==================
