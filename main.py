@@ -8,7 +8,7 @@ from aiogram import Bot, Dispatcher, executor, types
 
 
 
-TOKEN = "8250737324:AAFAGLchB2XdNN3VUHFMfifltRpTVLeIr1I"
+TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
 
 OPERATOR_ID = 7892937398
 
