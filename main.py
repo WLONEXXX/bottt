@@ -4,7 +4,7 @@ from aiogram.utils import executor
 
 # ================== НАСТРОЙКИ ==================
 TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
-OPERATOR_ID = 7892937398  # ваш ID
+OPERATOR_ID = 123456789  # ID оператора
 
 # ================== ДАННЫЕ ==================
 products = {
@@ -25,7 +25,7 @@ def main_menu():
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("Каталог", callback_data="catalog"))
     kb.add(types.InlineKeyboardButton("Связаться с оператором", callback_data="contact_operator"))
-    kb.add(types.InlineKeyboardButton("Оставить отзыв", callback_data="feedback"))
+    kb.add(types.InlineKeyboardButton("Оставить отзыв", callback_data="leave_review"))
     return kb
 
 def categories_kb():
@@ -52,11 +52,9 @@ def buy_kb(item_id):
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
-
-# Здесь хранится информация: msg_id оператора -> user_id
-operator_to_user = {}
-# Здесь хранится состояние пользователя при "связаться с оператором" или "отзыв"
-user_state = {}
+pending_orders = {}  # message_id -> user_id
+pending_contacts = {}  # message_id -> user_id
+pending_reviews = {}  # message_id -> user_id
 
 # ================== ХЕНДЛЕРЫ ==================
 @dp.message_handler(commands=['start'])
@@ -64,7 +62,7 @@ async def start(message: types.Message):
     await message.answer("Добро пожаловать в Whitch shop!", reply_markup=main_menu())
 
 @dp.callback_query_handler(lambda c: c.data == "main_menu")
-async def back_main(callback: types.CallbackQuery):
+async def go_main(callback: types.CallbackQuery):
     await callback.message.edit_text("Главное меню:", reply_markup=main_menu())
 
 @dp.callback_query_handler(lambda c: c.data == "catalog")
@@ -88,8 +86,11 @@ async def open_item(callback: types.CallbackQuery):
             if it["id"] == item_id:
                 item = it
                 break
-    caption = f"{item['name']}\nЦена: {item['price']} руб\n\n{item['desc']}"
-    await callback.message.edit_text(caption, reply_markup=buy_kb(item_id))
+
+    caption = f"{item['name']}\nЦена: {item['price']} ₽\n\n{item['desc']}"
+
+    # Если нет фото, просто отправим текст
+    await callback.message.answer(caption, reply_markup=buy_kb(item_id))
 
 @dp.callback_query_handler(lambda c: c.data.startswith("buy_"))
 async def buy(callback: types.CallbackQuery):
@@ -100,52 +101,72 @@ async def buy(callback: types.CallbackQuery):
             if it["id"] == item_id:
                 item = it
                 break
+
     user = callback.from_user
     text = (
-        f"🆕 Новый заказ!\n\n"
+        "🆕 Новый заказ!\n\n"
         f"Товар: {item['name']}\n"
-        f"Цена: {item['price']} руб\n\n"
+        f"Цена: {item['price']} ₽\n\n"
         f"Пользователь: {user.full_name}\n"
         f"Username: @{user.username}\n"
         f"User ID: {user.id}\n\n"
-        f"Ответьте на это сообщение, чтобы написать клиенту."
+        "Ответь реплаем на это сообщение, чтобы написать клиенту."
     )
+
     msg = await bot.send_message(OPERATOR_ID, text)
-    operator_to_user[msg.message_id] = user.id
-    await callback.answer("Ваш заказ отправлен оператору!")
+    pending_orders[msg.message_id] = user.id
+    await callback.message.answer("Ваш заказ отправлен оператору!")
+    await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data == "contact_operator")
 async def contact_operator(callback: types.CallbackQuery):
-    user_state[callback.from_user.id] = "operator_contact"
-    await callback.message.answer("Напишите сообщение оператору. Он ответит вам напрямую.")
+    msg = await bot.send_message(callback.from_user.id, "Напишите сообщение оператору:")
+    pending_contacts[msg.message_id] = callback.from_user.id
 
-@dp.callback_query_handler(lambda c: c.data == "feedback")
-async def feedback(callback: types.CallbackQuery):
-    user_state[callback.from_user.id] = "feedback"
-    await callback.message.answer("Напишите ваш отзыв, он будет отправлен оператору.")
+@dp.callback_query_handler(lambda c: c.data == "leave_review")
+async def leave_review(callback: types.CallbackQuery):
+    msg = await bot.send_message(callback.from_user.id, "Напишите ваш отзыв:")
+    pending_reviews[msg.message_id] = callback.from_user.id
 
+@dp.message_handler(lambda m: m.chat.id == OPERATOR_ID)
+async def operator_reply(message: types.Message):
+    if not message.reply_to_message:
+        return
+
+    msg_id = message.reply_to_message.message_id
+
+    # Проверяем заказы
+    if msg_id in pending_orders:
+        user_id = pending_orders[msg_id]
+        await bot.send_message(user_id, f"Оператор: {message.text}")
+    # Проверяем контакты
+    elif msg_id in pending_contacts:
+        user_id = pending_contacts[msg_id]
+        await bot.send_message(user_id, f"Оператор: {message.text}")
+    # Проверяем отзывы
+    elif msg_id in pending_reviews:
+        user_id = pending_reviews[msg_id]
+        await bot.send_message(user_id, f"Спасибо за ваш отзыв! Вы написали:\n{message.text}")
+
+# ================== ПОЛУЧЕНИЕ СООБЩЕНИЙ ОТ ПОЛЬЗОВАТЕЛЯ ==================
 @dp.message_handler()
-async def handle_messages(message: types.Message):
-    # Если пишет обычный пользователь
-    user_id = message.from_user.id
-    if user_id in user_state:
-        state = user_state.pop(user_id)
-        if state == "operator_contact":
-            msg = await bot.send_message(OPERATOR_ID,
-                f"Сообщение от {message.from_user.full_name} (@{message.from_user.username}):\n\n{message.text}"
-            )
-            operator_to_user[msg.message_id] = user_id
-            await message.answer("Ваше сообщение оператору отправлено!")
-        elif state == "feedback":
-            msg = await bot.send_message(OPERATOR_ID,
-                f"Отзыв от {message.from_user.full_name} (@{message.from_user.username}):\n\n{message.text}"
-            )
-            operator_to_user[msg.message_id] = user_id
-            await message.answer("Спасибо за ваш отзыв!")
+async def handle_user_message(message: types.Message):
+    # Проверяем контакты
+    for msg_id, user_id in pending_contacts.items():
+        if message.from_user.id == user_id:
+            await bot.send_message(OPERATOR_ID, f"Сообщение от пользователя {message.full_name} (@{message.username}):\n{message.text}")
+            del pending_contacts[msg_id]
+            await message.answer("Ваше сообщение отправлено оператору!")
+            return
 
-    # Если пишет оператор
-    elif message.chat.id == OPERATOR_ID and message.reply_to_message:
-        orig_msg_id = message.reply_to_message.message_id
-        user_id = operator_to_user.get(orig_msg_id)
-        if user_id:
-            await bot.send_message(user_id, f"Оператор: {message.text}")
+    # Проверяем отзывы
+    for msg_id, user_id in pending_reviews.items():
+        if message.from_user.id == user_id:
+            await bot.send_message(OPERATOR_ID, f"Отзыв от пользователя {message.full_name} (@{message.username}):\n{message.text}")
+            del pending_reviews[msg_id]
+            await message.answer("Спасибо за ваш отзыв!")
+            return
+
+# ================== ЗАПУСК ==================
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
