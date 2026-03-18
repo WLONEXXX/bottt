@@ -28,7 +28,8 @@ pending_messages = {}  # operator_id -> user_id
 def main_menu():
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("Каталог", callback_data="catalog"))
-    kb.add(types.InlineKeyboardButton("Оставить отзыв", callback_data="review"))
+    kb.add(types.InlineKeyboardButton("Связаться с оператором", callback_data="contact_operator"))
+    kb.add(types.InlineKeyboardButton("Оставить отзыв", callback_data="feedback"))
     return kb
 
 def categories_kb():
