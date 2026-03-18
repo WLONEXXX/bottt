@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher, types, executor
 
 # ================== НАСТРОЙКИ ==================
 
-TOKEN = "ВАШ_ТОКЕН_ЗДЕСЬ"
+TOKEN = "8794489664:AAEf5XAfIpzgojDuDmGMow9JEmpGYjJ6230"
 OPERATOR_ID = 7892937398  # ID оператора
 
 # ================== ДАННЫЕ ==================
@@ -65,7 +65,7 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "start")
 async def go_start(callback: types.CallbackQuery):
-    await callback.message.edit_text("Добро пожаловать в магазин еды!", reply_markup=main_menu())
+    await callback.message.edit_text("Добро пожаловать в Whitch shop!", reply_markup=main_menu())
 
 @dp.callback_query_handler(lambda c: c.data == "catalog")
 async def open_catalog(callback: types.CallbackQuery):
